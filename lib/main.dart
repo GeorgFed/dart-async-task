@@ -52,85 +52,12 @@ abstract interface class CoinRepository {
   void close();
 }
 
-class HttpCoinRepository implements CoinRepository {
-  HttpCoinRepository({required http.Client client, String? apiKey})
-    : _api = CoinGeckoClient(client: client, apiKey: apiKey);
-
-  final CoinGeckoClient _api;
-
-  @override
-  Future<List<Coin>> getTopCoins(int limit) =>
-      throw UnimplementedError('getTopCoins');
-
-  @override
-  Future<CoinDetails> getCoinDetails(String coinId) =>
-      throw UnimplementedError('getCoinDetails');
-
-  @override
-  Stream<CoinDetails> getCoinsStream(List<String> coinIds) =>
-      throw UnimplementedError('getCoinsStream');
-
-  @override
-  Stream<List<Coin>> pollPrices(List<String> coinIds, Duration interval) =>
-      throw UnimplementedError('pollPrices');
-
-  @override
-  Stream<String> getGrowingCoinNames(List<String> coinIds) =>
-      throw UnimplementedError('getGrowingCoinNames');
-
-  @override
-  void close() => throw UnimplementedError('close');
-}
-
-class CoinApiException implements Exception {
-  const CoinApiException(this.message);
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
-class CoinGeckoClient {
-  CoinGeckoClient({required http.Client client, String? apiKey})
-    : _client = client,
-      _apiKey = apiKey;
-
-  final http.Client _client;
-  final String? _apiKey;
-
-  Future<Object?> get(String path, Map<String, String> query) async {
-    final uri = Uri.https('api.coingecko.com', '/api/v3/$path', query);
-    final key = _apiKey;
-    try {
-      final response = await _client
-          .get(
-            uri,
-            headers: {
-              if (key != null && key.isNotEmpty) 'x-cg-demo-api-key': key,
-            },
-          )
-          .timeout(const Duration(seconds: 15));
-      if (response.statusCode != 200) {
-        throw CoinApiException('HTTP ${response.statusCode}');
-      }
-      return jsonDecode(utf8.decode(response.bodyBytes));
-    } on TimeoutException {
-      throw const CoinApiException('API не ответил за 15 секунд');
-    } on http.ClientException {
-      throw const CoinApiException('Ошибка подключения к API');
-    } on FormatException {
-      throw const CoinApiException('Повреждённый JSON');
-    }
-  }
-
-  void close() => _client.close();
-}
+CoinRepository createRepository(http.Client client) => throw UnimplementedError(
+  'Создайте реализацию CoinRepository и верните её здесь',
+);
 
 Future<void> main() async {
-  final CoinRepository repository = HttpCoinRepository(
-    client: http.Client(),
-    apiKey: Platform.environment['COINGECKO_DEMO_API_KEY'],
-  );
+  final repository = createRepository(http.Client());
   try {
     await runDemo(repository);
   } catch (error) {

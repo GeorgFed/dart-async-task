@@ -37,14 +37,14 @@ class RecordingClient extends MockClient {
   }
 }
 
-HttpCoinRepository repository(
+CoinRepository repository(
   Future<http.Response> Function(http.Request) handler,
-) => HttpCoinRepository(client: MockClient(handler));
+) => createRepository(MockClient(handler));
 
 void main() {
   test('CLI без API: все пять демонстраций', () async {
     final output = <String>[];
-    final api = HttpCoinRepository(client: createDemoClient());
+    final api = createRepository(createDemoClient());
     try {
       await runZoned(
         () => app.runDemo(api, interval: const Duration(milliseconds: 1)),
@@ -169,16 +169,27 @@ void main() {
       expect(coin.name, 'Bitcoin');
       expect(coin.description, 'Описание Bitcoin');
     });
-    test('Demo key передаётся заголовком', () async {
-      final api = HttpCoinRepository(
-        apiKey: 'synthetic-key',
-        client: MockClient((r) async {
-          expect(r.headers['x-cg-demo-api-key'], 'synthetic-key');
-          return response('[]', 200);
-        }),
-      );
-      addTearDown(api.close);
-      await api.getTopCoins(2);
+    test('Зависший запрос завершается ошибкой через 15 секунд', () {
+      fakeAsync((time) {
+        Object? error;
+        final pending = Completer<http.Response>();
+        final api = repository((_) => pending.future);
+        api
+            .getTopCoins(2)
+            .then<void>(
+              (_) {},
+              onError: (Object value) {
+                error = value;
+              },
+            );
+        time.flushMicrotasks();
+        time.elapse(const Duration(seconds: 14));
+        expect(error, isNull);
+        time.elapse(const Duration(seconds: 1));
+        time.flushMicrotasks();
+        expect(error, isA<Exception>());
+        api.close();
+      });
     });
     for (final status in [404, 429, 500]) {
       test('HTTP $status даёт понятную ошибку', () async {
@@ -187,8 +198,8 @@ void main() {
         await expectLater(
           api.getCoinDetails('bitcoin'),
           throwsA(
-            isA<CoinApiException>().having(
-              (e) => e.message,
+            isA<Exception>().having(
+              (e) => e.toString(),
               'message',
               contains('$status'),
             ),
@@ -199,19 +210,19 @@ void main() {
     test('Повреждённый JSON', () async {
       final api = repository((_) async => response('{broken', 200));
       addTearDown(api.close);
-      await expectLater(api.getTopCoins(2), throwsA(isA<CoinApiException>()));
+      await expectLater(api.getTopCoins(2), throwsA(isA<Exception>()));
     });
     test('Вместо списка пришёл объект', () async {
       final api = repository((_) async => response('{}', 200));
       addTearDown(api.close);
-      await expectLater(api.getTopCoins(2), throwsA(isA<CoinApiException>()));
+      await expectLater(api.getTopCoins(2), throwsA(isA<Exception>()));
     });
     test('Вместо деталей пришёл список', () async {
       final api = repository((_) async => response('[]', 200));
       addTearDown(api.close);
       await expectLater(
         api.getCoinDetails('bitcoin'),
-        throwsA(isA<CoinApiException>()),
+        throwsA(isA<Exception>()),
       );
     });
     test('Ошибка сети', () async {
@@ -219,11 +230,11 @@ void main() {
         (_) async => throw http.ClientException('offline'),
       );
       addTearDown(api.close);
-      await expectLater(api.getTopCoins(2), throwsA(isA<CoinApiException>()));
+      await expectLater(api.getTopCoins(2), throwsA(isA<Exception>()));
     });
     test('close закрывает переданный клиент', () {
       final client = RecordingClient((_) async => response('[]', 200));
-      final api = HttpCoinRepository(client: client);
+      final api = createRepository(client);
       api.close();
       expect(client.closed, isTrue);
     });
@@ -302,11 +313,7 @@ void main() {
         api
             .getCoinsStream(['bitcoin', 'missing', 'ethereum'])
             .map((c) => c.name),
-        emitsInOrder([
-          'bitcoin',
-          emitsError(isA<CoinApiException>()),
-          emitsDone,
-        ]),
+        emitsInOrder(['bitcoin', emitsError(isA<Exception>()), emitsDone]),
       );
       expect(requested, ['bitcoin', 'missing']);
     });
@@ -421,7 +428,7 @@ void main() {
               onDone: () => done = true,
             );
         time.flushMicrotasks();
-        expect(error, isA<CoinApiException>());
+        expect(error, isA<Exception>());
         expect(done, isTrue);
         time.elapse(const Duration(seconds: 10));
         expect(calls, 1);
@@ -454,7 +461,7 @@ void main() {
       addTearDown(api.close);
       await expectLater(
         api.getGrowingCoinNames(['bitcoin']),
-        emitsError(isA<CoinApiException>()),
+        emitsError(isA<Exception>()),
       );
     });
   });
