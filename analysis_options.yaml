@@ -1,0 +1,9 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  errors:
+    unused_field: ignore
+
+linter:
+  rules:
+    avoid_print: false
