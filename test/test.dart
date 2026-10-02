@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:dart_async_task/coin_api.dart';
-import 'package:dart_async_task/network.dart';
+import 'package:dart_async_task/main.dart' as app;
+import 'package:dart_async_task/main.dart' hide main;
 import 'package:fake_async/fake_async.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -42,6 +42,35 @@ HttpCoinRepository repository(
 ) => HttpCoinRepository(client: MockClient(handler));
 
 void main() {
+  test('CLI без API: все пять демонстраций', () async {
+    final output = <String>[];
+    final api = HttpCoinRepository(client: createDemoClient());
+    try {
+      await runZoned(
+        () => app.runDemo(api, interval: const Duration(milliseconds: 1)),
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) {
+            output.add(line);
+            parent.print(zone, line);
+          },
+        ),
+      );
+      final text = output.join('\n');
+      for (final title in [
+        'Топ монет:',
+        'Bitcoin:',
+        'Поток деталей:',
+        'Два обновления цен:',
+        'Монеты с ростом цены:',
+      ]) {
+        expect(text, contains(title));
+      }
+      expect(output.last, 'Bitcoin');
+    } finally {
+      api.close();
+    }
+  });
+
   group('Модели', () {
     test('Coin читает три поля, включая целочисленную цену', () {
       final coin = Coin.fromJson({
@@ -430,3 +459,33 @@ void main() {
     });
   });
 }
+
+http.Client createDemoClient() => MockClient((request) async {
+  await Future<void>.delayed(const Duration(milliseconds: 20));
+  final coins = [
+    {'id': 'bitcoin', 'name': 'Bitcoin', 'current_price': 65000},
+    {'id': 'ethereum', 'name': 'Ethereum', 'current_price': 3200},
+  ];
+  if (request.url.path.endsWith('/coins/markets')) {
+    final ids = request.url.queryParameters['ids']?.split(',');
+    final limit = int.parse(request.url.queryParameters['per_page'] ?? '250');
+    final selected = coins.where(
+      (coin) => ids == null || ids.contains(coin['id']),
+    );
+    return http.Response(jsonEncode(selected.take(limit).toList()), 200);
+  }
+  final id = request.url.pathSegments.last;
+  final selected = coins.where((coin) => coin['id'] == id);
+  if (selected.isEmpty) return http.Response('{"error":"not found"}', 404);
+  return http.Response(
+    jsonEncode({
+      'name': selected.first['name'],
+      'description': {'en': 'Учебное описание монеты.'},
+      'market_data': {
+        'price_change_percentage_24h': id == 'bitcoin' ? 2.5 : -1.0,
+      },
+    }),
+    200,
+    headers: {'content-type': 'application/json; charset=utf-8'},
+  );
+});
